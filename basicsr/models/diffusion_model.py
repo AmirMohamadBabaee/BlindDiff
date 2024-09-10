@@ -30,8 +30,8 @@ class DiffusionModel(BaseModel):
         self.print_network(self.net_g)
         self.scale=opt["scale"]
         self.total_time=0
-        self.contrast_loss = torch.nn.CrossEntropyLoss().cuda()
-        self.loss_fn_vgg = lpips.LPIPS(net='vgg').cuda()
+        self.contrast_loss = torch.nn.CrossEntropyLoss().to(self.device)
+        self.loss_fn_vgg = lpips.LPIPS(net='vgg').to(self.device)
         
         # define diffusion
         self.num_sampling_steps = opt["num_sampling_steps"]
