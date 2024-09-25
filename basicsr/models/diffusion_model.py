@@ -174,9 +174,7 @@ class DiffusionModel(BaseModel):
             self.detail_gt = self.gt - self.structure_gt
             self.lq = (self.lq * 255).round() / 255
             self.ker = self.ker.view(self.ker.shape[0], -1)
-            from code import interact
 
-            interact(local=locals())
             # self.lq=imresize_batch(self.gt,1/self.scale)
 
     def optimize_parameters(self, current_iter):
@@ -211,6 +209,7 @@ class DiffusionModel(BaseModel):
         # for swinDF
         window_size = 2  # self.opt['network_g']['window_size']
         scale = self.opt.get("scale", 1)
+        tile_pad = self.opt.get("tile_pad", 0)
         tile_size = self.opt.get("tile_size", 0)
 
         mod_pad_h, mod_pad_w = 0, 0
@@ -223,30 +222,59 @@ class DiffusionModel(BaseModel):
                 tile_size % scale == 0
             ), f"`{tile_size=}` should be divisible by `{scale=}`"
             lq_tile_size = tile_size // scale
-            
+
             tiles_x_num = math.ceil(w / lq_tile_size)
             tiles_y_num = math.ceil(h / lq_tile_size)
             total_tiles_num = tiles_x_num * tiles_y_num
             tile_counter = 0
-            
+
             logger = get_root_logger()
-            
-            for i in range(0, h-1, lq_tile_size):
-                for j in range(0, w-1, lq_tile_size):
+
+            for i in range(0, h - 1, lq_tile_size):
+                for j in range(0, w - 1, lq_tile_size):
                     tile_counter += 1
                     logger.info(f"Processing Tile {tile_counter} / {total_tiles_num}")
-                    
-                    tile_img = self.lq[:, :, i : i + lq_tile_size, j : j + lq_tile_size]
 
-                    if h % window_size != 0:
-                        mod_pad_h = window_size - lq_tile_size % window_size
-                    if w % window_size != 0:
-                        mod_pad_w = window_size - lq_tile_size % window_size
-                    
+                    # extract tile from input image
+                    ofs_x = j
+                    ofs_y = i
+                    # input tile area on total image
+                    tile_start_x = ofs_x
+                    tile_end_x = min(ofs_x + tile_size, w)
+                    tile_start_y = ofs_y
+                    tile_end_y = min(ofs_y + tile_size, h)
+
+                    # input tile area on total image with padding
+                    tile_start_x_pad = max(tile_start_x - tile_pad, 0)
+                    tile_end_x_pad = min(tile_end_x + tile_pad, w)
+                    tile_start_y_pad = max(tile_start_y - tile_pad, 0)
+                    tile_end_y_pad = min(tile_end_y + tile_pad, h)
+
+                    tile_img = self.lq[
+                        :,
+                        :,
+                        tile_start_y_pad:tile_end_y_pad,
+                        tile_start_x_pad:tile_end_x_pad,
+                    ]
+
+                    print(
+                        f"lq: ({tile_start_y_pad}:{tile_end_y}, {tile_start_x_pad}:{tile_end_x_pad})"
+                    )
+
+                    input_tile_size = tile_img.shape[-1]
+
+                    if input_tile_size % window_size != 0:
+                        mod_pad_h = window_size - input_tile_size % window_size
+                    if input_tile_size % window_size != 0:
+                        mod_pad_w = window_size - input_tile_size % window_size
+
                     tile_img = F.pad(tile_img, (0, mod_pad_w, 0, mod_pad_h), "reflect")
                     model_kwargs = dict(cond=tile_img)
 
-                    z = torch.randn([b, c, tile_size, tile_size], device=self.device)
+                    z = torch.randn(
+                        [b, c, input_tile_size * scale, input_tile_size * scale],
+                        device=self.device,
+                    )
                     if hasattr(self, "net_g_ema"):
                         self.net_g_ema.eval()
                         tile_output = self.diffusion.p_sample_loop(
@@ -278,13 +306,27 @@ class DiffusionModel(BaseModel):
                     start_index_tile_h = i * scale
                     start_index_tile_w = j * scale
 
+                    output_start_x_tile = (tile_start_x - tile_start_x_pad) * self.scale
+                    output_end_x_tile = min(
+                        output_start_x_tile + lq_tile_size * self.scale,
+                        out_w - mod_pad_w * scale,
+                    )
+                    output_start_y_tile = (tile_start_y - tile_start_y_pad) * self.scale
+                    output_end_y_tile = min(
+                        output_start_y_tile + lq_tile_size * self.scale,
+                        out_h - mod_pad_h * scale,
+                    )
+
                     self.output[
                         :,
                         :,
                         start_index_tile_h : start_index_tile_h + tile_size,
                         start_index_tile_w : start_index_tile_w + tile_size,
                     ] = tile_output[
-                        :, :, 0 : out_h - mod_pad_h * scale, 0 : out_w - mod_pad_w * scale
+                        :,
+                        :,
+                        output_start_y_tile:output_end_y_tile,
+                        output_start_x_tile:output_end_x_tile,
                     ]
 
         else:
