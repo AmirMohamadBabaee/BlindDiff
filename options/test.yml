@@ -2,9 +2,10 @@ name: BlindDiff_setting1
 suffix: ~  # add suffix to saved images
 model_type: DiffusionModel
 scale: 4
+tile_size: 64
 num_sampling_steps: 500
 crop_border: ~  # crop border when evaluation. If None, crop the scale pixels
-num_gpu: 0  # set num_gpu: 0 for cpu mode
+num_gpu: auto  # set num_gpu: 0 for cpu mode
 manual_seed: 0
 nonblindsr: false
 degradation:
@@ -19,8 +20,8 @@ datasets:
   test_1:
     name: DIV2K-Validation
     type: PairedImageDataset
-    dataroot_gt: /home/amir01/education/master/IPL/datasets/DIV2K/DIV2K_valid_HR/GTmod12
-    dataroot_lq: /home/amir01/education/master/IPL/datasets/DIV2K/DIV2K_valid_HR/LRbicx4
+    dataroot_gt: datasets/mini-set-5/HR
+    dataroot_lq: datasets/mini-set-5/LR_bic_x4
     io_backend:
       type: disk
 # network structures
